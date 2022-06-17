@@ -1,6 +1,11 @@
 # SABER-IMC_publication
-List of all R codes used for the analysis of single cell data in the paper Hosogane et al., about signal amplification for imaging mass cytometry.
+List of Cellprofiler piplines and R codes used for the analysis of single cell data in the paper Hosogane et al., about signal amplification for imaging mass cytometry.
 
+### Signal and background intensity quantification
+
+- quantify signal and background intensity by thresholding using CellProfiler.
+
+### Single cell segmentation
 
 ### SABER_preprocessing script
 
