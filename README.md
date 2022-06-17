@@ -2,10 +2,13 @@
 List of Cellprofiler piplines and R codes used for the analysis of single cell data in the paper Hosogane et al., about signal amplification for imaging mass cytometry.
 
 ### Signal and background intensity quantification
-
-- quantify signal and background intensity by thresholding using CellProfiler.
+thresholding_dev1.cppipe:
+- Create signal region masks and background region masks by thresholding using CellProfiler.
 
 ### Single cell segmentation
+calculate_intensity.cppipe:
+- quantify mean signal and background intensity from the created region masks.
+
 
 ### SABER_preprocessing script
 
