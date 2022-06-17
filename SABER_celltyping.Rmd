@@ -1,0 +1,770 @@
+---
+title: "SABER melanoma data analysis"
+output: html_document
+---
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+```
+
+## 2. Clustering 2. general cell type 
+# clustering
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+selected_markers <- c('CD3','CD4','CD11c','CD20','CD15','MPO','SMA','CD31','Caveolin','HLA-DR', 'SOX9','MelanA','gp100', "S100","CD68","CD206")
+
+pg_res <- Rphenograph(data = t(assay(sub[selected_markers,],"exprs")), k = 10)
+sub$PG <- factor(pg_res[[2]]$membership)
+```
+
+```{r}
+qual_col_pals <- brewer.pal.info[brewer.pal.info$category == 'qual',]   
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+pie(rep(1,length(col_vector)), col=col_vector, labels = names(col_vector))
+
+an <- list()
+an_col <- list()
+ts_pal<-list()
+# ts_pal$rygbw<-c("#F47C7C","#F7F48B","#A1DE93","#70A1D7","gray")
+# ts_pal$dark<-c("darkred","goldenrod","darkgreen","navy","gray")
+ts_pal$def<-c("firebrick2","gold","limegreen","navy","gray")
+ts_pal$green<-c("darkgreen","yellowgreen","yellow2","gray")
+ts_pal$red<-c("gold","darkorange","darkred","gray")
+pie(rep(1,12),col=c(ts_pal$def,ts_pal$green,ts_pal$red))
+# ts_pal$blue<-c("palegreen1","seagreen3","darkgreen","cyan3","darkcyan","powderblue","lightslateblue","purple2","mediumorchid1","darkred")
+
+ts_pal$blue<-c(c(brewer.pal(9,name="Greens")[c(3,5,8)],brewer.pal(9,name="Blues")[c(3,8)],brewer.pal(9,name="Reds")[c(2,4,5,7,9)]))
+pie(rep(1,10),col=c(ts_pal$blue))
+
+```
+
+# Run tSNE
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+# split cells by sample
+cs <- split(seq_len(ncol(sub)), sub$sample)
+# sample 'n_cells_dr' per sample
+cs <- unlist(lapply(cs, function(u) 
+  sample(u, min(n_cells_dr, length(u)))))
+
+# run 'TSNE' dimension reductions on selected channels 
+xy <- calculateTSNE(sub[selected_markers,cs], exprs_values = "exprs",perplexity = 50)
+reducedDim(sub, "TSNE") <- matrix(NA, ncol(sub), ncol(xy)) #create empty template
+reducedDim(sub, "TSNE")[cs, ] <- xy #add TSNE coordinates
+rm(xy)
+```
+
+
+```{r, fig.width=8}
+DR <- "TSNE"
+p <- .get_df(sub[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = "value")) +
+    geom_point(alpha=1, size=1)+ 
+    facet_wrap("variable", ncol =6) +
+    scale_color_gradientn(colours=rev(brewer.pal(11, 'RdYlBu')))+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+```{r, fig.width=6}
+DR <- "TSNE"
+var <- "PG"
+p <- .get_df(sub[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=1)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+#preprocess for heatmap, median expression per PG cluster
+#plot heatmap for check
+```{r warning = FALSE, fig.width=8, fig.height=5}
+hm_dat <- .get_matrix(sub, group_by="PG")
+
+groups =4
+#distance = "correlation" #euclidean
+distance = "euclidean"
+method = "ward.D2"
+
+ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method=method)
+
+ph_allm <- pheatmap(hm_dat,cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method=method)
+
+# fn <- sprintf("%s_bigC_PG_heatmap_%s.png", prefix, suffix)
+# fn_allm <- sprintf("%s_bigC_PG_heatmap_allmarkers_%s.png", prefix, suffix)
+#  # ggsave(file.path(results_folder,  fn), ph, width = 6, height = 8)
+#  # ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
+```
+
+#plot heatmap
+```{r, fig.width=8, fig.height=8}
+an$pg <- data.frame(cluster=rownames(hm_dat))  %>% 
+  mutate(annotation = ifelse(cluster%in% c(24,20,22,25,3,4,9,14,15,18,21), "Immune",
+                               ifelse(cluster%in% c(13,23), "Vascular",
+                               ifelse(cluster%in% c(7,8,17,12), "Fibroblasts",
+                               ifelse(cluster%in% c(11,27,28), "Unassigned","Tumor")))))
+
+an_col$pg <- list(Cell_type=c("Immune"=ts_pal$def[1],
+                              "Vascular"=ts_pal$def[2],
+                              "Fibroblasts"=ts_pal$def[3],
+                              "Tumor"=ts_pal$def[4],
+                              "Unassigned"=ts_pal$def[5]))
+
+ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="complete", 
+  border_color=NA, annotation_row = data.frame(Cell_type=an$pg$annotation), show_rownames = F, cellwidth = 20, cellheight = 10, 
+  annotation_colors = an_col$pg, fontsize = 20, legend_breaks = seq(0.1,1,by=0.2))
+
+fn2 <- sprintf("%s_heatmap_2_general_%s.pdf", prefix, suffix)
+  ggsave(file.path(results_folder,  fn2), ph2, width = 10, height = 10)
+```
+
+#assigning to PGa
+```{r}
+m <- match(sub$PG, an$pg$cluster)
+sub$PGa <- an$pg$annotation[m]
+table(sub$PGa, sub$sample_ROI_id)
+```
+
+```{r, fig.width=6}
+DR <- "TSNE"
+var <- "PGa"
+p <- .get_df(sub[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=1)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+## 3. Clustering 3. Immune cell type
+## Re-clustering on PG-assigned "Immune" cells
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+tmp <- sub[,sub$PGa %in% c("Immune")]
+selected_markers <- c('CD3','CD4','CD8a','CD11c','CD68','CD20','CD45RA','CD11b','CD15','MPO','HLA-DR', "CD206")
+
+pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 10)
+tmp$PGi <- factor(pg_res[[2]]$membership)
+
+sub$PGi <- 0
+sub[,colnames(tmp)]$PGi <- tmp$PGi
+unique(sub$PGi)
+```
+
+```{r}
+unique(tmp$PGi)
+```
+
+# Run tSNE
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+# split cells by sample
+cs <- split(seq_len(ncol(tmp)), tmp$sample)
+# sample 'n_cells_dr' per sample
+cs <- unlist(lapply(cs, function(u) 
+  sample(u, min(n_cells_dr, length(u)))))
+
+# run 'TSNE' dimension reductions on selected channels 
+xy <- calculateTSNE(tmp[selected_markers,cs], exprs_values = "exprs",perplexity = 50)
+reducedDim(tmp, "TSNE") <- matrix(NA, ncol(tmp), ncol(xy)) #create empty template
+reducedDim(tmp, "TSNE")[cs, ] <- xy #add TSNE coordinates
+rm(xy)
+```
+
+
+```{r, fig.width=8}
+DR <- "TSNE"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = "value")) +
+    geom_point(alpha=1, size=1)+ 
+    facet_wrap("variable", ncol =6) +
+    scale_color_gradientn(colours=rev(brewer.pal(11, 'RdYlBu')))+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+```{r, fig.width=6}
+DR <- "TSNE"
+var <- "PGi"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=2)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+
+#plot heatmap (for check)
+```{r warning = FALSE, fig.width=8, fig.height=5}
+
+hm_dat <- .get_matrix(tmp, group_by="PGi")
+groups =4
+#distance = "correlation" #euclidean
+distance = "euclidean"
+
+ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="ward.D2")
+
+ph_allm <- pheatmap(hm_dat,cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="ward.D2")
+
+# fn <- sprintf("%s_immune_PG_heatmap_%s.png", prefix, suffix)
+# fn_allm <- sprintf("%s_immune_PG_heatmap_allmarkers_%s.png", prefix, suffix)
+#  ggsave(file.path(results_folder,  fn), ph, width = 6, height = 8)
+#  ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
+
+```
+```{r warning = FALSE, fig.width=8, fig.height=8}
+
+
+an$pgi <- data.frame(cluster=rownames(hm_dat))  %>% 
+  mutate(annotation = ifelse(cluster%in% c(1,6,3,20,11,12,5,29), "T-cells",
+                               ifelse(cluster%in%c(32,30,31,28,25,26), "B-cells",
+                               ifelse(cluster%in% c(10,15,13,7), "Unassigned",
+                               ifelse(cluster%in% c(14), "Granulocytes", "Macrophages")))))
+
+an_col$pgi <- list(Cell_type=c("Macrophages"=ts_pal$def[1],
+                              "T-cells"=ts_pal$def[2],
+                              "B-cells"=ts_pal$def[3],
+                              "Granulocytes"=ts_pal$def[4],
+                              "Unassigned"=ts_pal$def[5]))
+
+ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="complete", border_color=NA, 
+  annotation_row = data.frame(Cell_type=an$pgi$annotation), show_rownames = F, cellwidth = 20, cellheight = 10, 
+  annotation_colors = an_col$pgi, fontsize = 20, legend_breaks = seq(0.1,1,by=0.2))
+fn2 <- sprintf("%s_heatmap_3_immune_%s.pdf", prefix, suffix)
+  ggsave(file.path(results_folder,  fn2), ph2, width = 8, height = 8)
+```
+#assigning  to PGia
+```{r}
+m <- match(tmp$PGi, an$pgi$cluster)
+tmp$PGia <- an$pgi$annotation[m]
+sub$PGia <- sub$PGa
+sub[,tmp$id]$PGia <- tmp$PGia
+table(sub$PGia)
+```
+
+```{r, fig.width=5}
+DR <- "TSNE"
+var <- "PGia"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=1)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+#plot frequency
+```{r}
+#per sample
+
+
+cell_colors <-col_vector[1:length(unique(tmp$PGia))]
+names(cell_colors) <- unique(tmp$PGia)
+
+ns <- table(tmp$sample_ROI_id_fig, tmp$PGia)
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(ROI=Var1, cell=Var2)
+
+  p <- ggplot(soi_cf, aes(ROI, Freq, fill = cell)) +
+    scale_fill_manual("cell type", values = cell_colors, drop=FALSE) +
+    geom_bar(stat = "identity") + ggtitle('') + theme_light()
+  p
+
+  #save the plot
+  # fn <- sprintf("%s_frequency_3_immune_ROI_%s.pdf", prefix,suffix)
+  # ggsave(file.path(results_folder, fn), p, width = 12, height = 4)  
+# per ROI
+ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGia)
+#re-order
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(Sample=Var1, cell=Var2)
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Macrophages","T-cells","B-cells","Granulocytes","Unassigned"))
+
+ 
+p <- ggplot(soi_cf, aes(Sample,Freq, fill = cell)) +
+    scale_fill_manual("Cell type", values = ts_pal$def[c(1,2,3,4,5)], drop=FALSE) +geom_bar(stat = "identity") + 
+  ggtitle('') + theme_light(base_size = 16)+
+  theme(legend.title = element_text(face = "bold")) + labs(y ="Frequency")+
+  scale_x_discrete(labels=c("Excluded", "Inflamed","Mixed\nexcluded","Mixed\ninflamed"))
+  
+p
+
+  #save the plot
+  fn <- sprintf("%s_frequency_3_immune_sample_%s.pdf", prefix,suffix)
+  ggsave(file.path(results_folder, fn), p, width = 6, height = 4)  
+```
+
+
+## 4. Clustering 4. Macrophages
+#PG clustering on "Macrophages" from 3.immune PG
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+tmp <- sub[,sub$PGia %in% "Macrophages"]
+selected_markers <- c('HLA-DR','VISTA','CD11b','CD68','TIM3','CD11c','PDL1','CD86','PDL2','Axl','CD14','CD206' )
+pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 100)
+
+tmp$PGm <- factor(pg_res[[2]]$membership, )
+
+sub$PGm <- 0
+sub[,colnames(tmp)]$PGm <- tmp$PGm
+unique(sub$PGm)
+
+```
+
+# Run tSNE
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+# split cells by sample
+cs <- split(seq_len(ncol(tmp)), tmp$sample)
+# sample 'n_cells_dr' per sample
+cs <- unlist(lapply(cs, function(u) 
+  sample(u, min(n_cells_dr, length(u)))))
+
+# run 'TSNE' dimension reductions on selected channels 
+xy <- calculateTSNE(tmp[selected_markers,cs], exprs_values = "exprs",perplexity = 50)
+reducedDim(tmp, "TSNE") <- matrix(NA, ncol(tmp), ncol(xy)) #create empty template
+reducedDim(tmp, "TSNE")[cs, ] <- xy #add TSNE coordinates
+rm(xy)
+```
+
+
+```{r, fig.width=8}
+DR <- "TSNE"
+var <- "scaled"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = "value")) +
+    geom_point(alpha=1, size=1)+ 
+    facet_wrap("variable", ncol =6) +
+    scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')))+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+```{r, fig.width=8}
+DR <- "TSNE"
+var <- "PGm"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=1)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+
+#preprocess for heatmap, median expression per PG cluster
+```{r}
+hm_dat <- .get_matrix(tmp, group_by="PGm")
+```
+
+#plot heatmap (for check)
+```{r warning = FALSE, fig.width=8, fig.height=5}
+groups =3
+#distance = "correlation" #euclidean
+distance = "euclidean"
+
+ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="ward.D2")
+
+ph_allm <- pheatmap(hm_dat,cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="ward.D2")
+
+# fn <- sprintf("%s_macro_PG_heatmap_%s.png", prefix, suffix)
+# fn_allm <- sprintf("%s_macro_PG_heatmap_allmarkers_%s.png", prefix, suffix)
+#  ggsave(file.path(results_folder,  fn), ph, width = 6, height = 8)
+#  ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
+
+```
+#plot heatmap 
+```{r warning = FALSE, fig.width=8, fig.height=8}
+
+
+an$pgm <- data.frame(cluster=rownames(hm_dat))  %>% 
+  mutate(annotation = ifelse(cluster%in% c(2), "PDL1/CD86_ISM",
+                               ifelse(cluster%in%c(10), "CD68_ISM",
+                               ifelse(cluster%in% c(3), "CD11c/HLA-DR_ISM", "Other_macrophages"))))
+
+an_col$pgm <- list(Cell_type=c("PDL1/CD86_ISM"=ts_pal$green[3],
+                              "CD68_ISM"=ts_pal$green[2],
+                              "CD11c/HLA-DR_ISM"=ts_pal$green[1],
+                              "Other_macrophages"=ts_pal$green[4]))
+
+ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="complete", 
+  border_color=NA, annotation_row = data.frame(Cell_type=an$pgm$annotation), show_rownames = F, cellwidth = 20, cellheight = 15, 
+  annotation_colors = an_col$pgm, fontsize = 16, legend_breaks = seq(0,1,by=0.2))
+
+fn2 <- sprintf("%s_heatmap_4_macrophages_%s.pdf", prefix, suffix)
+  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 6)
+```
+#assigning  to PGma
+```{r}
+m <- match(tmp$PGm, an$pgm$cluster)
+tmp$PGma <- an$pgm$annotation[m]
+sub$PGma <- sub$PGa
+sub[,tmp$id]$PGma <- tmp$PGma
+table(sub$PGma)
+```
+
+
+#plot frequency
+```{r}
+#per ROI
+ns <- table(tmp$sample_ROI_id_fig, tmp$PGma)
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(ROI=Var1, cell=Var2)
+
+  p <- ggplot(soi_cf, aes(ROI, Freq, fill = cell)) +
+    scale_fill_manual("cell type", values = col_vector, drop=FALSE) +
+    geom_bar(stat = "identity") + ggtitle('') + theme_light()
+  p
+
+  #save the plot
+  # fn <- sprintf("%s_frequency_4_macrophage_ROI_%s.pdf", prefix,suffix)
+  # ggsave(file.path(results_folder, fn), p, width = 12, height = 4)  
+
+#per sample
+
+ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGma)
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(Sample=Var1, cell=Var2)
+#re-order
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Other_macrophages","PDL1/CD86_ISM","CD11c/HLA-DR_ISM","CD68_ISM"))
+
+ 
+p <- ggplot(soi_cf, aes(Sample,Freq, fill = cell)) +
+    scale_fill_manual("Cell type", values = ts_pal$green[c(4,3,2,1)], drop=FALSE) +geom_bar(stat = "identity") + 
+  ggtitle('') + theme_light(base_size = 16)+
+  theme(legend.title = element_text(face = "bold")) + labs(y ="Frequency")+
+  scale_x_discrete(labels=c("Excluded", "Inflamed","Mixed\nexcluded","Mixed\ninflamed"))
+  
+p
+
+  #save the plot
+  fn <- sprintf("%s_frequency_4_macrophage_Sample_%s.pdf", prefix,suffix)
+  ggsave(file.path(results_folder, fn), p, width = 7, height = 4)  
+
+```
+
+
+## 5. Clustering 5. T cells
+#PG clustering on "T-cells" from 3.immune PG
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+tmp <- sub[,sub$PGia %in% "T-cells"]
+selected_markers <-  c('CD4','CD8a','CTLA4','PD-1','TIM3','CD28','FoxP3','LAG3' )
+pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 80)
+tmp$PGt <- factor(pg_res[[2]]$membership)
+sub$PGt <- 0
+sub[,colnames(tmp)]$PGt <- tmp$PGt
+unique(sub$PGt)
+```
+
+# Run tSNE
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+# split cells by sample
+cs <- split(seq_len(ncol(tmp)), tmp$sample)
+# sample 'n_cells_dr' per sample
+cs <- unlist(lapply(cs, function(u) 
+  sample(u, min(n_cells_dr, length(u)))))
+
+# run 'TSNE' dimension reductions on selected channels 
+xy <- calculateTSNE(tmp[selected_markers,cs], exprs_values = "exprs",perplexity = 50)
+reducedDim(tmp, "TSNE") <- matrix(NA, ncol(tmp), ncol(xy)) #create empty template
+reducedDim(tmp, "TSNE")[cs, ] <- xy #add TSNE coordinates
+rm(xy)
+```
+
+
+```{r, fig.width=8}
+DR <- "TSNE"
+var <- "scaled"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = "value")) +
+    geom_point(alpha=1, size=1)+ 
+    facet_wrap("variable", ncol =6) +
+    scale_color_gradientn(colours=rev(brewer.pal(11, 'RdYlBu')))+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+```{r, fig.width=8}
+DR <- "TSNE"
+var <- "PGt"
+p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=1)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+#preprocess for heatmap, median expression per PG cluster
+
+
+
+
+#plot heatmap 
+
+```{r warning = FALSE, fig.width=8, fig.height=5}
+
+hm_dat <- .get_matrix(tmp,group_by="PGt")
+pheatmap(hm_dat)
+
+groups =4
+#distance = "correlation" #euclidean
+distance = "euclidean"
+
+ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="ward")
+
+# fn <- sprintf("%s_T-cells_PG_heatmap_%s.png", prefix, suffix)
+# fn_allm <- sprintf("%s_T-cells_PG_heatmap_allmarkers_%s.png", prefix, suffix)
+#  ggsave(file.path(results_folder,  fn), ph, width = 6, height = 8)
+#  ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
+
+```
+#plot heatmap 
+```{r warning = FALSE, fig.width=8, fig.height=8}
+
+
+an$pgt <- data.frame(cluster=rownames(hm_dat))  %>% 
+  mutate(annotation = ifelse(cluster%in% c(3,6), "Exhausted_CD8",
+                               ifelse(cluster%in%c(2), "CTLA4_CD4",
+                               ifelse(cluster%in% c(4), "PD1_CD4", "Other_T-cells"))))
+
+an_col$pgt <- list(Cell_type=c("Exhausted_CD8"=ts_pal$red[1],
+                              "CTLA4_CD4"=ts_pal$red[2],
+                              "PD1_CD4"=ts_pal$red[3],
+                              "Other_T-cells"=ts_pal$red[4]))
+
+ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="complete", 
+  border_color=NA, annotation_row = data.frame(Cell_type=an$pgt$annotation), show_rownames = F, cellwidth = 20, cellheight = 15, 
+  annotation_colors = an_col$pgt, fontsize = 16, legend_breaks = seq(0,1,by=0.2))
+
+fn2 <- sprintf("%s_heatmap_5_T-cells_%s.pdf", prefix, suffix)
+  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 6)
+```
+#assigning  to PGta
+```{r}
+m <- match(tmp$PGt, an$pgt$cluster)
+tmp$PGta <- an$pgt$annotation[m]
+sub$PGta <- sub$PGa
+sub[,tmp$id]$PGta <- tmp$PGta
+table(sub$PGta)
+```
+#plot frequency
+```{r}
+ns <- table(tmp$sample_ROI_id_fig, tmp$PGt)
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(ROI=Var1, cell=Var2)
+
+  p <- ggplot(soi_cf, aes(ROI, Freq, fill = cell)) +
+    scale_fill_manual("cell type", values = col_vector, drop=FALSE) +
+    geom_bar(stat = "identity") + ggtitle('') + theme_light()
+  p
+
+  #save the plot
+  # fn <- sprintf("%s_frequency_5_T-cells_ROI_%s.pdf", prefix,suffix)
+  # ggsave(file.path(results_folder, fn), p, width = 12, height = 4)  
+
+ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGta)
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(Sample=Var1, cell=Var2)
+#re-order
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Other_T-cells","Exhausted_CD8","CTLA4_CD4","PD1_CD4"))
+
+ 
+p <- ggplot(soi_cf, aes(Sample,Freq, fill = cell)) +
+    scale_fill_manual("Cell type", values = ts_pal$red[c(4,1,2,3)], drop=FALSE) +geom_bar(stat = "identity") + 
+  ggtitle('') + theme_light(base_size = 16)+
+  theme(legend.title = element_text(face = "bold")) + labs(y ="Frequency")+
+  scale_x_discrete(labels=c("Excluded", "Inflamed","Mixed\nexcluded","Mixed\ninflamed"))
+  
+p
+
+  #save the plot
+  fn <- sprintf("%s_frequency_5_T-cells_Sample_%s.pdf", prefix,suffix)
+  ggsave(file.path(results_folder, fn), p, width = 6.5, height = 4)  
+
+  
+```
+
+```{r}
+ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGt)
+df <- as.data.frame(ns)%>%rename(Sample=Var1, cell_type=Var2, Count=Freq)
+
+  
+  p <- ggplot(df, aes(Sample, Count, fill=cell_type)) +
+    scale_fill_manual("cell_type", values = col_vector, drop=FALSE) +
+    geom_bar(position = "dodge",stat = "identity") + ggtitle('') + theme_light()
+  p
+```
+
+
+
+##6. Clustering 6. Tumor cells
+# clustering on PG-defiened Tumor cells
+
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+tmp <- sub[,sub$PGa %in% "Tumor"]
+selected_markers <- c('HLA-ABC','gp100','S100','Glut1','PDL1','SOX10','TRP1','Ki-67','SOX9','MelanA' )
+pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 80)
+tmp$PGtu <- factor(pg_res[[2]]$membership)
+sub$PGtu <- 0
+sub[,colnames(tmp)]$PGtu <- tmp$PGtu
+unique(sub$PGtu)
+
+```
+
+```{r}
+hm_dat <- .get_matrix(tmp,group_by="PGtu")
+```
+
+#plot heatmap
+```{r warning = FALSE, fig.width=8, fig.height=5}
+
+
+groups =6
+#distance = "correlation" #euclidean
+distance = "euclidean"
+
+ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="ward")
+
+# fn <- sprintf("%s_heatmap_6_tumor_%s.png", prefix, suffix)
+#   ggsave(file.path(results_folder,  fn), ph, width = 6, height = 8)
+```
+#plot heatmap 
+```{r warning = FALSE, fig.width=8, fig.height=8}
+
+
+an$pgtu <- data.frame(cluster=rownames(hm_dat))  %>% 
+  mutate(annotation = ifelse(cluster%in% c(1), "Inflamed_Glut1",
+                        ifelse(cluster%in% c(2), "Inflamed_Ki-67",
+                          ifelse(cluster%in% c(3,4), "Inflamed",
+                            ifelse(cluster%in%c(8), "Excluded_SOX10",
+                              ifelse(cluster%in% c(9), "Excluded", 
+                                ifelse(cluster%in% c(13), "Mixed_SOX10",
+                                  ifelse(cluster%in% c(7,12), "Mixed_Ki-67",
+                                    ifelse(cluster%in% c(6), "Mixed_Glut1",
+                                      ifelse(cluster%in% c(10), "Mixed_PDL1","Mixed"))))))))))
+
+an_col$pgtu <- list(Cell_type=c("Inflamed_Glut1"=ts_pal$blue[1],
+                              "Inflamed_Ki-67"=ts_pal$blue[2],
+                              "Inflamed"=ts_pal$blue[3],
+                              "Excluded_SOX10"=ts_pal$blue[4],
+                              "Excluded"=ts_pal$blue[5],
+                              "Mixed_SOX10"=ts_pal$blue[6],
+                              "Mixed_Ki-67"=ts_pal$blue[7],
+                              "Mixed_Glut1"=ts_pal$blue[8],
+                              "Mixed_PDL1"=ts_pal$blue[9],
+                              "Mixed"=ts_pal$blue[10]))
+
+ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
+  clustering_distance_cols = distance, method="complete", 
+  border_color=NA, annotation_row = data.frame(Cell_type=an$pgtu$annotation), show_rownames = F, cellwidth = 20, cellheight = 15, 
+  annotation_colors = an_col$pgtu, fontsize = 16, legend_breaks = seq(0,1,by=0.2))
+
+fn2 <- sprintf("%s_heatmap_6_Tumor_%s.pdf", prefix, suffix)
+  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 6)
+```
+#assigning  to PGtua
+```{r}
+m <- match(tmp$PGtu, an$pgtu$cluster)
+tmp$PGtua <- an$pgtu$annotation[m]
+sub$PGtua <- sub$PGa
+sub[,tmp$id]$PGtua <- tmp$PGtua
+table(sub$PGtua)
+```
+
+```{r}
+ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGtua)
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(Sample=Var1, cell=Var2)
+#re-order
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Inflamed_Glut1",
+                              "Inflamed_Ki-67",
+                              "Inflamed",
+                              "Excluded_SOX10",
+                              "Excluded",
+                              "Mixed_SOX10",
+                              "Mixed_Ki-67",
+                              "Mixed_Glut1",
+                              "Mixed_PDL1",
+                              "Mixed"))
+
+ 
+p <- ggplot(soi_cf, aes(Sample,Freq, fill = cell)) +
+    scale_fill_manual("Cell type", values = ts_pal$blue, drop=FALSE) +geom_bar(stat = "identity") + 
+  ggtitle('') + theme_light(base_size = 16)+
+  theme(legend.title = element_text(face = "bold")) + labs(y ="Frequency")+
+  scale_x_discrete(labels=c("Excluded", "Inflamed","Mixed\nexcluded","Mixed\ninflamed"))
+  
+p
+
+  #save the plot
+  fn <- sprintf("%s_frequency_6_Tumor_Sample_%s.pdf", prefix,suffix)
+  ggsave(file.path(results_folder, fn), p, width = 6.5, height = 4)  
+
+```
+
+
+
+

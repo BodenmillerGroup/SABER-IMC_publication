@@ -1,0 +1,433 @@
+---
+title: "SABER melanoma data preprocessing"
+output: html_notebook
+---
+## 0. Preparation
+# Load packages
+
+```{r}
+library(S4Vectors)
+library(SingleCellExperiment)
+library(scater)
+library(Rphenograph)
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+library(flowCore)
+library(data.table)
+```
+
+
+# inputs
+```{r}
+panel_name <- "TH108_panel.csv"
+roi_name <- "TH108_roiname.csv"
+run=1
+prefix = 'SABER_forMS'
+suffix = paste0('r',run)
+
+```
+
+#parameters
+```{r}
+n_cells_dr = 500 # for t-sne
+
+```
+
+
+# Set the paths to folders and (meta)data
+```{r}
+folder.project <- dirname(getwd())
+#folder for rds files
+analysis_folder <- file.path(folder.project,"analysis")
+ifelse(!dir.exists(analysis_folder), dir.create(analysis_folder), FALSE)
+#folder for plots
+results_folder <- file.path(folder.project,"analysis", "result_plots")
+ifelse(!dir.exists(results_folder), dir.create(results_folder), FALSE)
+
+#file path for (meta)data
+fn.cpout <- file.path(folder.project,'output','cpout')
+fn.cells <- file.path(fn.cpout,'cell.csv')
+fn.image <- file.path(fn.cpout,'Image.csv')
+fn.panel <- file.path(folder.project,'config', panel_name)
+fn.meta <- file.path(fn.cpout,"acquisition_metadata.csv")
+fn.roiname <-file.path(folder.project,'config',roi_name)
+```
+
+# Helpers
+
+```{r helpers}
+# construct data.frame for plotting with ggplot2
+# using the specified assay slot as features values
+.get_df <- function(sce, assay = "exprs") {
+    dr <- do.call("cbind", reducedDims(sce))
+    foo <- sapply(reducedDims(sce), ncol)
+    colnames(dr) <- paste0(rep.int(names(foo), foo), sapply(foo, seq_len))
+    df <- data.frame(dr, colData(sce), t(assay(sce, assay)), check.names = FALSE)
+    reshape2::melt(df, id.vars = c(colnames(colData(sce)), colnames(dr)))
+}
+```
+
+```{r, get matrix function }
+.get_matrix <- function(sce,assay="scaled", group_by = "celltype", markers = rownames(sce)) {
+  mat <- .get_df(sce[markers,cols=group_by], assay = assay) %>% mutate(group_by = get(group_by)) %>% 
+    group_by(group_by, variable) %>%  summarize(median_scale_count = median(value))
+  hm_dat = reshape2::dcast(data = mat, formula = 'group_by ~ variable',
+                          value.var = 'median_scale_count')
+  # save column
+  trownames = hm_dat$group_by
+  # convert to a matrix
+  hm_dat = as.matrix(hm_dat[,-c(1)])
+  row.names(hm_dat) = trownames
+  return(hm_dat)
+}
+```
+
+
+# Read in the cell data and metadata
+
+```{r load-data}
+cells <- read.csv(fn.cells , stringsAsFactors = FALSE)
+image <- read.csv(fn.image, stringsAsFactors = FALSE)
+meta <- read.csv(fn.meta, header = TRUE, stringsAsFactors = FALSE)
+panel <- read.csv(fn.panel, header = TRUE, stringsAsFactors = FALSE)
+roiname <- read.csv(fn.roiname, header = TRUE, stringsAsFactors = FALSE)
+```
+
+# Process data into a `SingleCellExperiment` object
+
+```{r, processing-of-data}
+# Select the features of interest
+cur_cells <- cells[,grepl("MeanIntensity_FullStackFiltered_", colnames(cells))]
+# adapt rownames to add the pannel
+rownames(cur_cells) <- paste(cells$ImageNumber, cells$ObjectNumber, sep = "_")
+
+# Create cell data
+col.data <- DataFrame(row.names = rownames(cur_cells),
+                       id = paste(cells$ImageNumber,cells$ObjectNumber,sep="_"),
+                       ObjectNumber = cells$ObjectNumber,
+                       ImageNumber = cells$ImageNumber,
+                       X = round(cells$"Location_Center_X"),
+                       Y = round(max(cells$"Location_Center_Y")-cells$"Location_Center_Y")
+                       )
+# Create panel data
+row.data <- DataFrame(panel)
+rownames(row.data) <- row.data$Target
+# Order the features based on channels
+channels.panel <- paste0("c", panel$channel)
+channels.cells <- gsub(".*_", "", colnames(cur_cells))
+cur_cells <- cur_cells[,match(channels.panel, channels.cells)]
+# Scale the counts to incorporate the 16-bit specific scaling factor
+cur_cells <- cur_cells*65536
+```
+
+#use the `SingleCellexperiment` package to handle and work with the data.
+```{r, SCE-object}
+# Generate the SCE object, 
+sce <- SingleCellExperiment(assays = list(counts = t(cur_cells)))
+colData(sce) <- col.data
+rowData(sce) <- row.data
+# Change rownames
+rownames(sce) <- rownames(row.data)
+```
+
+#add the image metadata to the object.
+
+```{r, image-meta}
+sce$Image_path <- file.path(fn.cpout,image$FileName_CellImage[sce$ImageNumber])
+sce$Image_folder <- fn.cpout
+sce$Image_name <- image$FileName_CellImage[sce$ImageNumber]
+sce$sample <- gsub(pattern = "(^.*?)_s0_p.*", replacement = "\\1", sce$Image_name)
+sce$ROI <- gsub(pattern = "^.*_r(.*?)_.*", replacement = "\\1", sce$Image_name)
+# Make matching "sample_ROIid" in both meta and colData
+sce$sample_ROI <- paste(sce$sample,sce$ROI,sep = '_')
+meta$sample_ROI <- paste(meta$AcSession,meta$AcquisitionID,sep = '_')
+# Manually add ReDescription and AcSessionID in meta
+sce$core_id <- meta$ReDescription[match(sce$sample_ROI, meta$sample_ROI)]
+sce$sample_id <- meta$AcSessionID[match(sce$sample_ROI, meta$sample_ROI)]
+sce$sample_ROI_id <- paste(sce$sample_id,sce$core_id,sep='_')
+sce$prefix <- paste0(prefix,"_",suffix)
+sce$cellnumber <- gsub(pattern = "^.*?_(.*)", replacement = "\\1", sce$id)
+```
+#checking colData
+```{r}
+unique(sce$sample_ROI)
+unique(sce$ROI)
+unique(sce$core_id)
+unique(sce$sample_ROI_id)
+unique(sce$sample_id)
+unique(sce$sample)
+unique(sce$prefix)
+range(sce$X)
+range(sce$Y)
+```
+
+# compute scaled expressions for visualization
+
+#### to do: adapt cofactor for high intensity targets
+
+```{r}
+assay(sce, "exprs") <- asinh(assay(sce, "counts"))
+```
+
+# Run tSNE
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+# split cells by sample
+cs <- split(seq_len(ncol(sce)), sce$sample)
+# sample 'n_cells_dr' per sample
+cs <- unlist(lapply(cs, function(u) 
+  sample(u, min(n_cells_dr, length(u)))))
+
+# run 'TSNE' dimension reductions on selected channels 
+xy <- calculateTSNE(sce[,cs], exprs_values = "exprs",perplexity = 50)
+reducedDim(sce, "TSNE") <- matrix(NA, ncol(sce), ncol(xy)) #create empty template
+reducedDim(sce, "TSNE")[cs, ] <- xy #add TSNE coordinates
+rm(xy)
+```
+
+```{r}
+table(sce$sample_id)
+table(sce[,cs]$sample_ROI_id,sce[,cs]$sample_id)
+```
+
+
+#export fcs
+```{r}
+
+counts.matrix <- data.table(t(assay(sce[,cs],"counts")),type=sce[,cs]$sample_id)
+coi <- rownames(sce)
+
+#split the data by `Sample Name`
+dt_list <- split(counts.matrix, by = c("type"))
+
+names(dt_list)
+#save fcs file 
+fr_list <- lapply( 
+  dt_list,
+  function(x) {
+    #data 
+    dta <- as.matrix(x[,coi, with=FALSE])
+    #meta
+    meta <- data.frame(
+      name = dimnames(dta)[[2]],
+      desc = dimnames(dta)[[2]]
+      )
+    #meta$range <- apply(apply(dta,2,range),2,diff)
+    #meta$minRange <- apply(dta,2,min)
+    #meta$maxRange <- apply(dta,2,max)
+    
+    #meta$range <- c(0,4) #fixed range for cytobank gating, this doesnt work in cytobank
+    ff <- new("flowFrame", exprs=dta, parameters=AnnotatedDataFrame(meta))
+    write.FCS(ff, file.path(results_folder, paste0(paste0(x[, unique(type)]), ".FCS")))
+  }
+)
+
+```
+
+
+```{r prep-data}
+saber_targets <- c("VISTA", "gp100", "CTLA4","PD-1","CD28","FoxP3","PDL2","SOX10","SOX9","CD4","CD8a", "TIM3", "LAG3", "CD86","CD11c", "PDL1")
+assay(sce[saber_targets,], "exprs") <- asinh(assay(sce[saber_targets,], "counts")/5)
+#assay(sce[c("PDL1","CD11c","SOX9" ),], "exprs") <- asinh(assay(sce[c("PDL1","CD11c","SOX9"),], "counts")/2)
+es <- assay(sce, "exprs")
+qs <- rowQuantiles(es, probs = c(0.0, 0.995))
+x <- (es - qs[, 1]) / (qs[, 2] - qs[, 1])
+x[x < 0] <- 0; x[x > 1] <- 1
+assay(sce, "scaled") <- x
+```
+
+#show disribution of markers
+
+###show TSNE cells
+
+```{r, fig.width=20}
+DR <- "TSNE"
+var <- "scaled"
+p <- .get_df(sce[,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = "value")) +
+    geom_point(alpha=1, size=1)+ 
+    facet_wrap("variable", ncol =10) +
+    scale_color_gradientn(colours=rev(brewer.pal(11, 'RdYlBu')))+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+# color palette
+```{r}
+qual_col_pals <- brewer.pal.info[brewer.pal.info$category == 'qual',]   
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+pie(rep(1,length(col_vector)), col=col_vector, labels = names(col_vector))
+```
+
+
+```{r, fig.width=8}
+DR <- "TSNE"
+var <- "sample_ROI_id"
+p <- .get_df(sce[,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = var)) +
+    geom_point(alpha=1, size=1)+
+    scale_color_manual(values=col_vector)+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
+
+
+
+
+
+##select ROIs for analysis
+```{r}
+selected_rois <- c('39765_t1','39765_t1-2','39765_t3','39765_t7','1936_t1','1936_t2','1936_t5','4324_t1','4324_t1-2','4324_t2','4324_t2-2','4324_t3','4324_t4','4324_t7')
+sub <- sce [,sce$sample_ROI_id %in% selected_rois]
+```
+
+## Rename ROIs for figures
+```{r}
+sub$sample_ROI_id_fig <- roiname$sample_ROI_id_fig[match(sub$sample_ROI_id,roiname$sample_ROI_id)]
+sub$sample_ROI_dsc_fig <- ifelse(sub$sample_id %in% c("1936"), "Excluded" , 
+                                   ifelse(sub$sample_id %in% c("39765"), "Inflamed" ,
+                                   ifelse(sub$sample_ROI_id %in% c("4324_t3","4324_t7"), "Mixed_Excluded" ,"Mixed_Inflamed")))
+unique(sub$sample_ROI_id_fig)
+unique(sub$sample_ROI_dsc_fig)
+```
+
+
+```{r}
+table(sub$sample_ROI_id)
+```
+
+
+## 1. Clustering 1: detect unspecific bright spots
+# Phenograph clustering 
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+selected_markers <- c('FoxP3','SOX10','LAG3','CD86')
+pg_res <- Rphenograph(data = t(assay(sub[selected_markers,],"exprs")), k = 20)
+sub$PGu <- factor(pg_res[[2]]$membership)
+```
+
+```{r, fig.width=6, fig.height=12}
+hm_dat <- .get_matrix(sub, group_by="PGu")
+groups =2
+
+clust_distance = "euclidean"
+clust_method = "ward"
+
+pheatmap(hm_dat[,selected_markers], clustering_distance_cols = clust_distance,
+         clustering_distance_rows = clust_distance,
+         clustering_method = clust_method)
+```
+
+```{r}
+an <- data.frame(Annotation = ifelse(rownames(hm_dat)==8, "Removed", "Kept"))
+ann_colors = list(Annotation = c(Kept="navy", Removed="firebrick2"))
+
+
+ph2 <- pheatmap(hm_dat[,selected_markers],
+                clustering_distance_cols = clust_distance,
+         clustering_distance_rows = clust_distance,
+         clustering_method = clust_method,
+  border_color=NA, annotation_row = an, show_rownames = F, cellwidth = 20, cellheight = 10, fontsize = 16,
+  annotation_colors = ann_colors)
+
+fn2 <- sprintf("%s_heatmap_1_usp_%s.pdf", prefix, suffix)
+  ggsave(file.path(results_folder,  fn2), ph2, width = 6, height = 8)
+```
+
+##TSNE plot to show outlier
+
+
+#assigning to sub$PGua
+```{r}
+usp <- c(8)
+sub$PGua <- ifelse(sub$PGu %in% usp, "usp","non_usp")
+```
+
+#plot cell frequencies
+```{r}
+
+ann_colors$usp <- c(non_usp="navy", usp="firebrick2")
+
+ns <- table(sub$sample_ROI_id_fig, sub$PGua)
+
+soi_cf <- data.frame(prop.table(ns, 1))%>%
+  rename(ROI=Var1, cell=Var2)
+
+  p <- ggplot(soi_cf, aes(ROI, Freq, fill = cell)) +
+    scale_fill_manual("cell type", values = ann_colors$usp, drop=FALSE) +
+    geom_bar(stat = "identity") + ggtitle('') + theme_light()
+  p
+
+  #save the plot
+  fn <- sprintf("%s_frequency_1_usp_%s.pdf", prefix,suffix)
+  ggsave(file.path(results_folder, fn), p, width = 12, height = 4)  
+```
+#remove usp
+```{r}
+sub <- sub[,sub$PGua %in% c("non_usp")]
+```
+
+# compute scaled expressions for visualization
+```{r}
+# assay(sub, "exprs") <- asinh(assay(sub, "counts"))
+es <- assay(sub, "exprs")
+qs <- rowQuantiles(es, probs = c(0.0, 0.999))
+x <- (es - qs[, 1]) / (qs[, 2] - qs[, 1])
+x[x < 0] <- 0; x[x > 1] <- 1
+assay(sub, "scaled") <- x
+```
+
+```{r}
+rownames(sub)
+```
+
+# Run tSNE
+```{r}
+set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
+# split cells by sample
+cs <- split(seq_len(ncol(sub)), sub$sample)
+# sample 'n_cells_dr' per sample
+cs <- unlist(lapply(cs, function(u) 
+  sample(u, min(n_cells_dr, length(u)))))
+
+# run 'TSNE' dimension reductions on selected channels 
+xy <- calculateTSNE(sub[,cs], exprs_values = "exprs",perplexity = 50)
+reducedDim(sub, "TSNE") <- matrix(NA, ncol(sub), ncol(xy)) #create empty template
+reducedDim(sub, "TSNE")[cs, ] <- xy #add TSNE coordinates
+rm(xy)
+```
+
+
+
+#show disribution of markers
+
+###show TSNE cells
+
+```{r, fig.width=20}
+DR <- "TSNE"
+var <- "scaled"
+p <- .get_df(sub[,cs],assay="scaled") %>%
+    ggplot(aes_string(paste0(DR,"1"), paste0(DR,"2"), col = "value")) +
+    geom_point(alpha=1, size=1)+ 
+    facet_wrap("variable", ncol =10) +
+    scale_color_gradientn(colours=rev(brewer.pal(11, 'Spectral')))+
+    theme_void() + theme(aspect.ratio = 1, strip.text.x = element_text(size = 8))
+
+print(p)
+
+#fn <- sprintf("%s__%s_%s.png", pp_prefix, var,DR)
+  #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
+  
+```
+
