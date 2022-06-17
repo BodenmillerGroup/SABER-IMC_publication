@@ -1,5 +1,5 @@
 # SABER-IMC_publication
-List of Cellprofiler piplines and R codes used for the analysis of the data used for the paper Hosogane et al., about signal amplification for imaging mass cytometry.
+List of Cellprofiler pipelines and R codes used for the analysis of the data used for the paper "DNA-barcoded signal amplification for imaging mass cytometry enables sensitive and highly multiplexed tissue imaging" (Hosogane et al.), about signal amplification for imaging mass cytometry.
 
 ### Signal and background intensity quantification
 thresholding_dev1.cppipe:
@@ -12,7 +12,7 @@ calculate_intensity.cppipe:
 
 ### SABER_preprocessing script
 SABER_preprocessing.Rmd :
--  Conversion of single cell data from Cell profiler to SingleCellExperiment object.
+-  Conversion of single cell data from CellProfiler to SingleCellExperiment object.
 -  Data scaling and filtering
 
 
