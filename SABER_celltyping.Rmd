@@ -15,7 +15,7 @@ selected_markers <- c('CD3','CD4','CD11c','CD20','CD15','MPO','SMA','CD31','Cave
 pg_res <- Rphenograph(data = t(assay(sub[selected_markers,],"exprs")), k = 10)
 sub$PG <- factor(pg_res[[2]]$membership)
 ```
-
+# prepare color pallette
 ```{r}
 qual_col_pals <- brewer.pal.info[brewer.pal.info$category == 'qual',]   
 col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
@@ -27,12 +27,13 @@ ts_pal<-list()
 # ts_pal$rygbw<-c("#F47C7C","#F7F48B","#A1DE93","#70A1D7","gray")
 # ts_pal$dark<-c("darkred","goldenrod","darkgreen","navy","gray")
 ts_pal$def<-c("firebrick2","gold","limegreen","navy","gray")
-ts_pal$green<-c("darkgreen","yellowgreen","yellow2","gray")
-ts_pal$red<-c("gold","darkorange","darkred","gray")
+ts_pal$green<-c("navy","royalblue","lightblue","gray")
+ts_pal$red<-c("lightblue","royalblue","navy","gray")
+# ts_pal$red<-c("lightblue1","skyblue1","royalblue1","gray90") 
 pie(rep(1,12),col=c(ts_pal$def,ts_pal$green,ts_pal$red))
 # ts_pal$blue<-c("palegreen1","seagreen3","darkgreen","cyan3","darkcyan","powderblue","lightslateblue","purple2","mediumorchid1","darkred")
 
-ts_pal$blue<-c(c(brewer.pal(9,name="Greens")[c(3,5,8)],brewer.pal(9,name="Blues")[c(3,8)],brewer.pal(9,name="Reds")[c(2,4,5,7,9)]))
+ts_pal$blue<-c(c(brewer.pal(9,name="Blues")[c(2,5,8)],brewer.pal(9,name="Greys")[c(3,6)],brewer.pal(9,name="Oranges")[c(2,3,4,6,8)]))
 pie(rep(1,10),col=c(ts_pal$blue))
 
 ```
@@ -106,7 +107,7 @@ ph_allm <- pheatmap(hm_dat,cutree_rows = groups, clustering_distance_rows = dist
 #  # ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
 ```
 
-#plot heatmap
+# assign clusters and plot heatmap
 ```{r, fig.width=8, fig.height=8}
 an$pg <- data.frame(cluster=rownames(hm_dat))  %>% 
   mutate(annotation = ifelse(cluster%in% c(24,20,22,25,3,4,9,14,15,18,21), "Immune",
@@ -166,10 +167,6 @@ sub[,colnames(tmp)]$PGi <- tmp$PGi
 unique(sub$PGi)
 ```
 
-```{r}
-unique(tmp$PGi)
-```
-
 # Run tSNE
 ```{r}
 set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
@@ -186,7 +183,7 @@ reducedDim(tmp, "TSNE")[cs, ] <- xy #add TSNE coordinates
 rm(xy)
 ```
 
-
+# tSNE for check
 ```{r, fig.width=8}
 DR <- "TSNE"
 p <- .get_df(tmp[selected_markers,cs],assay="scaled") %>%
@@ -202,7 +199,7 @@ print(p)
   #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
   
 ```
-
+# tSNE for check
 ```{r, fig.width=6}
 DR <- "TSNE"
 var <- "PGi"
@@ -240,9 +237,8 @@ ph_allm <- pheatmap(hm_dat,cutree_rows = groups, clustering_distance_rows = dist
 #  ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
 
 ```
+# assign clusters and plot heatmap
 ```{r warning = FALSE, fig.width=8, fig.height=8}
-
-
 an$pgi <- data.frame(cluster=rownames(hm_dat))  %>% 
   mutate(annotation = ifelse(cluster%in% c(1,6,3,20,11,12,5,29), "T-cells",
                                ifelse(cluster%in%c(32,30,31,28,25,26), "B-cells",
@@ -262,7 +258,7 @@ ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_r
 fn2 <- sprintf("%s_heatmap_3_immune_%s.pdf", prefix, suffix)
   ggsave(file.path(results_folder,  fn2), ph2, width = 8, height = 8)
 ```
-#assigning  to PGia
+# assigning  to PGia
 ```{r}
 m <- match(tmp$PGi, an$pgi$cluster)
 tmp$PGia <- an$pgi$annotation[m]
@@ -270,7 +266,7 @@ sub$PGia <- sub$PGa
 sub[,tmp$id]$PGia <- tmp$PGia
 table(sub$PGia)
 ```
-
+# tSNE for check
 ```{r, fig.width=5}
 DR <- "TSNE"
 var <- "PGia"
@@ -333,7 +329,7 @@ p
 ```{r}
 set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
 tmp <- sub[,sub$PGia %in% "Macrophages"]
-selected_markers <- c('HLA-DR','VISTA','CD11b','CD68','TIM3','CD11c','PDL1','CD86','PDL2','Axl','CD14','CD206' )
+selected_markers <- c('HLA-DR','VISTA','CD11b','CD68','TIM-3','CD11c','PD-L1','CD86','PD-L2','AXL','CD14','CD206' )
 pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 100)
 
 tmp$PGm <- factor(pg_res[[2]]$membership, )
@@ -360,7 +356,7 @@ reducedDim(tmp, "TSNE")[cs, ] <- xy #add TSNE coordinates
 rm(xy)
 ```
 
-
+# tSNE for check
 ```{r, fig.width=8}
 DR <- "TSNE"
 var <- "scaled"
@@ -378,6 +374,7 @@ print(p)
   
 ```
 
+# tSNE for check
 ```{r, fig.width=8}
 DR <- "TSNE"
 var <- "PGm"
@@ -418,18 +415,18 @@ ph_allm <- pheatmap(hm_dat,cutree_rows = groups, clustering_distance_rows = dist
 #  ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
 
 ```
-#plot heatmap 
-```{r warning = FALSE, fig.width=8, fig.height=8}
+# assign clusters and plot heatmap 
+```{r warning = FALSE, fig.width=8, fig.height=5}
 
 
 an$pgm <- data.frame(cluster=rownames(hm_dat))  %>% 
-  mutate(annotation = ifelse(cluster%in% c(2), "PDL1/CD86_ISM",
-                               ifelse(cluster%in%c(10), "CD68_ISM",
-                               ifelse(cluster%in% c(3), "CD11c/HLA-DR_ISM", "Other_macrophages"))))
+  mutate(annotation = ifelse(cluster%in% c(2), "PD-L1/CD86",
+                               ifelse(cluster%in%c(10), "CD68/CD14",
+                               ifelse(cluster%in% c(3), "CD11c/HLA-DR", "Other_macrophages"))))
 
-an_col$pgm <- list(Cell_type=c("PDL1/CD86_ISM"=ts_pal$green[3],
-                              "CD68_ISM"=ts_pal$green[2],
-                              "CD11c/HLA-DR_ISM"=ts_pal$green[1],
+an_col$pgm <- list(Cell_type=c("PD-L1/CD86"=ts_pal$green[3],
+                              "CD68/CD14"=ts_pal$green[2],
+                              "CD11c/HLA-DR"=ts_pal$green[1],
                               "Other_macrophages"=ts_pal$green[4]))
 
 ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
@@ -438,7 +435,7 @@ ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_r
   annotation_colors = an_col$pgm, fontsize = 16, legend_breaks = seq(0,1,by=0.2))
 
 fn2 <- sprintf("%s_heatmap_4_macrophages_%s.pdf", prefix, suffix)
-  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 6)
+  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 5)
 ```
 #assigning  to PGma
 ```{r}
@@ -472,7 +469,7 @@ ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGma)
 soi_cf <- data.frame(prop.table(ns, 1))%>%
   rename(Sample=Var1, cell=Var2)
 #re-order
-soi_cf$cell<-factor(soi_cf$cell, levels=c("Other_macrophages","PDL1/CD86_ISM","CD11c/HLA-DR_ISM","CD68_ISM"))
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Other_macrophages","PD-L1/CD86","CD11c/HLA-DR","CD68/CD14"))
 
  
 p <- ggplot(soi_cf, aes(Sample,Freq, fill = cell)) +
@@ -485,7 +482,7 @@ p
 
   #save the plot
   fn <- sprintf("%s_frequency_4_macrophage_Sample_%s.pdf", prefix,suffix)
-  ggsave(file.path(results_folder, fn), p, width = 7, height = 4)  
+  ggsave(file.path(results_folder, fn), p, width = 6.5, height = 4)  
 
 ```
 
@@ -495,7 +492,7 @@ p
 ```{r}
 set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
 tmp <- sub[,sub$PGia %in% "T-cells"]
-selected_markers <-  c('CD4','CD8a','CTLA4','PD-1','TIM3','CD28','FoxP3','LAG3' )
+selected_markers <-  c('CD4','CD8a','CTLA-4','PD-1','TIM-3','CD28','Foxp3','LAG-3' )
 pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 80)
 tmp$PGt <- factor(pg_res[[2]]$membership)
 sub$PGt <- 0
@@ -519,7 +516,7 @@ reducedDim(tmp, "TSNE")[cs, ] <- xy #add TSNE coordinates
 rm(xy)
 ```
 
-
+# tSNE for check
 ```{r, fig.width=8}
 DR <- "TSNE"
 var <- "scaled"
@@ -536,7 +533,7 @@ print(p)
   #ggsave(file.path(vsrs_folder,  fn), p, width = 24, height = 18)
   
 ```
-
+# tSNE for check
 ```{r, fig.width=8}
 DR <- "TSNE"
 var <- "PGt"
@@ -558,7 +555,7 @@ print(p)
 
 
 
-#plot heatmap 
+#plot heatmap for check
 
 ```{r warning = FALSE, fig.width=8, fig.height=5}
 
@@ -578,18 +575,18 @@ ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distan
 #  ggsave(file.path(results_folder,  fn_allm), ph_allm, width = 6, height = 8)
 
 ```
-#plot heatmap 
+# assign clusters and plot heatmap 
 ```{r warning = FALSE, fig.width=8, fig.height=8}
 
 
 an$pgt <- data.frame(cluster=rownames(hm_dat))  %>% 
-  mutate(annotation = ifelse(cluster%in% c(3,6), "Exhausted_CD8",
-                               ifelse(cluster%in%c(2), "CTLA4_CD4",
-                               ifelse(cluster%in% c(4), "PD1_CD4", "Other_T-cells"))))
+  mutate(annotation = ifelse(cluster%in% c(3,6), "PD-1/TIM-3/LAG-3_CD8",
+                               ifelse(cluster%in%c(2), "CTLA-4_CD4",
+                               ifelse(cluster%in% c(4), "PD-1_CD4", "Other_T-cells"))))
 
-an_col$pgt <- list(Cell_type=c("Exhausted_CD8"=ts_pal$red[1],
-                              "CTLA4_CD4"=ts_pal$red[2],
-                              "PD1_CD4"=ts_pal$red[3],
+an_col$pgt <- list(Cell_type=c("PD-1/TIM-3/LAG-3_CD8"=ts_pal$red[1],
+                              "CTLA-4_CD4"=ts_pal$red[2],
+                              "PD-1_CD4"=ts_pal$red[3],
                               "Other_T-cells"=ts_pal$red[4]))
 
 ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
@@ -598,7 +595,7 @@ ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_r
   annotation_colors = an_col$pgt, fontsize = 16, legend_breaks = seq(0,1,by=0.2))
 
 fn2 <- sprintf("%s_heatmap_5_T-cells_%s.pdf", prefix, suffix)
-  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 6)
+  ggsave(file.path(results_folder,  fn2), ph2, width =8 , height = 5)
 ```
 #assigning  to PGta
 ```{r}
@@ -627,7 +624,7 @@ ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGta)
 soi_cf <- data.frame(prop.table(ns, 1))%>%
   rename(Sample=Var1, cell=Var2)
 #re-order
-soi_cf$cell<-factor(soi_cf$cell, levels=c("Other_T-cells","Exhausted_CD8","CTLA4_CD4","PD1_CD4"))
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Other_T-cells","PD-1/TIM-3/LAG-3_CD8","CTLA-4_CD4","PD-1_CD4"))
 
  
 p <- ggplot(soi_cf, aes(Sample,Freq, fill = cell)) +
@@ -640,7 +637,7 @@ p
 
   #save the plot
   fn <- sprintf("%s_frequency_5_T-cells_Sample_%s.pdf", prefix,suffix)
-  ggsave(file.path(results_folder, fn), p, width = 6.5, height = 4)  
+  ggsave(file.path(results_folder, fn), p, width =7, height = 4)  
 
   
 ```
@@ -664,7 +661,7 @@ df <- as.data.frame(ns)%>%rename(Sample=Var1, cell_type=Var2, Count=Freq)
 ```{r}
 set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
 tmp <- sub[,sub$PGa %in% "Tumor"]
-selected_markers <- c('HLA-ABC','gp100','S100','Glut1','PDL1','SOX10','TRP1','Ki-67','SOX9','MelanA' )
+selected_markers <- c('HLA-ABC','gp100','S100','GLUT1','PD-L1','SOX10','TRP1','Ki-67','SOX9','MelanA' )
 pg_res <- Rphenograph(data = t(assay(tmp[selected_markers,],"exprs")), k = 80)
 tmp$PGtu <- factor(pg_res[[2]]$membership)
 sub$PGtu <- 0
@@ -677,7 +674,7 @@ unique(sub$PGtu)
 hm_dat <- .get_matrix(tmp,group_by="PGtu")
 ```
 
-#plot heatmap
+#plot heatmap for check
 ```{r warning = FALSE, fig.width=8, fig.height=5}
 
 
@@ -691,30 +688,30 @@ ph <- pheatmap(hm_dat[,selected_markers],cutree_rows = groups, clustering_distan
 # fn <- sprintf("%s_heatmap_6_tumor_%s.png", prefix, suffix)
 #   ggsave(file.path(results_folder,  fn), ph, width = 6, height = 8)
 ```
-#plot heatmap 
+# assign clusters and plot heatmap 
 ```{r warning = FALSE, fig.width=8, fig.height=8}
 
 
 an$pgtu <- data.frame(cluster=rownames(hm_dat))  %>% 
-  mutate(annotation = ifelse(cluster%in% c(1), "Inflamed_Glut1",
+  mutate(annotation = ifelse(cluster%in% c(1), "Inflamed_GLUT1",
                         ifelse(cluster%in% c(2), "Inflamed_Ki-67",
                           ifelse(cluster%in% c(3,4), "Inflamed",
                             ifelse(cluster%in%c(8), "Excluded_SOX10",
                               ifelse(cluster%in% c(9), "Excluded", 
                                 ifelse(cluster%in% c(13), "Mixed_SOX10",
                                   ifelse(cluster%in% c(7,12), "Mixed_Ki-67",
-                                    ifelse(cluster%in% c(6), "Mixed_Glut1",
-                                      ifelse(cluster%in% c(10), "Mixed_PDL1","Mixed"))))))))))
+                                    ifelse(cluster%in% c(6), "Mixed_GLUT1",
+                                      ifelse(cluster%in% c(10), "Mixed_PD-L1","Mixed"))))))))))
 
-an_col$pgtu <- list(Cell_type=c("Inflamed_Glut1"=ts_pal$blue[1],
+an_col$pgtu <- list(Cell_type=c("Inflamed_GLUT1"=ts_pal$blue[1],
                               "Inflamed_Ki-67"=ts_pal$blue[2],
                               "Inflamed"=ts_pal$blue[3],
                               "Excluded_SOX10"=ts_pal$blue[4],
                               "Excluded"=ts_pal$blue[5],
                               "Mixed_SOX10"=ts_pal$blue[6],
                               "Mixed_Ki-67"=ts_pal$blue[7],
-                              "Mixed_Glut1"=ts_pal$blue[8],
-                              "Mixed_PDL1"=ts_pal$blue[9],
+                              "Mixed_GLUT1"=ts_pal$blue[8],
+                              "Mixed_PD-L1"=ts_pal$blue[9],
                               "Mixed"=ts_pal$blue[10]))
 
 ph2 <- pheatmap(hm_dat[,selected_markers],cutree_rows = 1, clustering_distance_rows = distance,
@@ -733,21 +730,21 @@ sub$PGtua <- sub$PGa
 sub[,tmp$id]$PGtua <- tmp$PGtua
 table(sub$PGtua)
 ```
-
+# asssign finer clusters and plot heatmap
 ```{r}
 ns <- table(tmp$sample_ROI_dsc_fig, tmp$PGtua)
 soi_cf <- data.frame(prop.table(ns, 1))%>%
   rename(Sample=Var1, cell=Var2)
 #re-order
-soi_cf$cell<-factor(soi_cf$cell, levels=c("Inflamed_Glut1",
+soi_cf$cell<-factor(soi_cf$cell, levels=c("Inflamed_GLUT1",
                               "Inflamed_Ki-67",
                               "Inflamed",
                               "Excluded_SOX10",
                               "Excluded",
                               "Mixed_SOX10",
                               "Mixed_Ki-67",
-                              "Mixed_Glut1",
-                              "Mixed_PDL1",
+                              "Mixed_GLUT1",
+                              "Mixed_PD-L1",
                               "Mixed"))
 
  

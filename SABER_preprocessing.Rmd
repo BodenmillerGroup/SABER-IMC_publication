@@ -20,19 +20,14 @@ library(data.table)
 
 # inputs
 ```{r}
-panel_name <- "TH108_panel.csv"
-roi_name <- "TH108_roiname.csv"
-run=1
+panel_name <- "TH108_panel.csv" # Antibody panel file 
+roi_name <- "TH108_roiname.csv" # Matching ROI-name from IMC acquisition to ROI-name for Figures
+run = 1
 prefix = 'SABER_forMS'
 suffix = paste0('r',run)
-
+n_cells_dr = 500 # number of cells per sample for t-sne
 ```
 
-#parameters
-```{r}
-n_cells_dr = 500 # for t-sne
-
-```
 
 
 # Set the paths to folders and (meta)data
@@ -55,7 +50,6 @@ fn.roiname <-file.path(folder.project,'config',roi_name)
 ```
 
 # Helpers
-
 ```{r helpers}
 # construct data.frame for plotting with ggplot2
 # using the specified assay slot as features values
@@ -68,7 +62,8 @@ fn.roiname <-file.path(folder.project,'config',roi_name)
 }
 ```
 
-```{r, get matrix function }
+```{r, get matrix function}
+# get matrix for heatmap plotting using median value per celltype
 .get_matrix <- function(sce,assay="scaled", group_by = "celltype", markers = rownames(sce)) {
   mat <- .get_df(sce[markers,cols=group_by], assay = assay) %>% mutate(group_by = get(group_by)) %>% 
     group_by(group_by, variable) %>%  summarize(median_scale_count = median(value))
@@ -85,7 +80,6 @@ fn.roiname <-file.path(folder.project,'config',roi_name)
 
 
 # Read in the cell data and metadata
-
 ```{r load-data}
 cells <- read.csv(fn.cells , stringsAsFactors = FALSE)
 image <- read.csv(fn.image, stringsAsFactors = FALSE)
@@ -102,7 +96,7 @@ cur_cells <- cells[,grepl("MeanIntensity_FullStackFiltered_", colnames(cells))]
 # adapt rownames to add the pannel
 rownames(cur_cells) <- paste(cells$ImageNumber, cells$ObjectNumber, sep = "_")
 
-# Create cell data
+# Create cell data for colData
 col.data <- DataFrame(row.names = rownames(cur_cells),
                        id = paste(cells$ImageNumber,cells$ObjectNumber,sep="_"),
                        ObjectNumber = cells$ObjectNumber,
@@ -110,7 +104,7 @@ col.data <- DataFrame(row.names = rownames(cur_cells),
                        X = round(cells$"Location_Center_X"),
                        Y = round(max(cells$"Location_Center_Y")-cells$"Location_Center_Y")
                        )
-# Create panel data
+# Create panel data for rowData
 row.data <- DataFrame(panel)
 rownames(row.data) <- row.data$Target
 # Order the features based on channels
@@ -132,7 +126,6 @@ rownames(sce) <- rownames(row.data)
 ```
 
 #add the image metadata to the object.
-
 ```{r, image-meta}
 sce$Image_path <- file.path(fn.cpout,image$FileName_CellImage[sce$ImageNumber])
 sce$Image_folder <- fn.cpout
@@ -162,12 +155,20 @@ range(sce$X)
 range(sce$Y)
 ```
 
-# compute scaled expressions for visualization
-
-#### to do: adapt cofactor for high intensity targets
-
-```{r}
+# compute tansformed/scaled expressions for clustering and visualization
+```{r prep-data}
+# add exprs for clustering
 assay(sce, "exprs") <- asinh(assay(sce, "counts"))
+saber_targets <- c("VISTA", "gp100", "CTLA-4","PD-1","CD28","Foxp3","PD-L2","SOX10","SOX9","CD4","CD8a", "TIM-3", "LAG-3", "CD86","CD11c", "PD-L1")
+assay(sce[saber_targets,], "exprs") <- asinh(assay(sce[saber_targets,], "counts")/5)
+
+# add scaled for visualisation
+es <- assay(sce, "exprs")
+qs <- rowQuantiles(es, probs = c(0.0, 0.995))
+x <- (es - qs[, 1]) / (qs[, 2] - qs[, 1])
+x[x < 0] <- 0; x[x > 1] <- 1
+assay(sce, "scaled") <- x
+
 ```
 
 # Run tSNE
@@ -226,16 +227,7 @@ fr_list <- lapply(
 ```
 
 
-```{r prep-data}
-saber_targets <- c("VISTA", "gp100", "CTLA4","PD-1","CD28","FoxP3","PDL2","SOX10","SOX9","CD4","CD8a", "TIM3", "LAG3", "CD86","CD11c", "PDL1")
-assay(sce[saber_targets,], "exprs") <- asinh(assay(sce[saber_targets,], "counts")/5)
-#assay(sce[c("PDL1","CD11c","SOX9" ),], "exprs") <- asinh(assay(sce[c("PDL1","CD11c","SOX9"),], "counts")/2)
-es <- assay(sce, "exprs")
-qs <- rowQuantiles(es, probs = c(0.0, 0.995))
-x <- (es - qs[, 1]) / (qs[, 2] - qs[, 1])
-x[x < 0] <- 0; x[x > 1] <- 1
-assay(sce, "scaled") <- x
-```
+
 
 #show disribution of markers
 
@@ -312,7 +304,7 @@ table(sub$sample_ROI_id)
 # Phenograph clustering 
 ```{r}
 set.seed(200, kind = "Mersenne-Twister", normal.kind = "Inversion"); rnorm(1)
-selected_markers <- c('FoxP3','SOX10','LAG3','CD86')
+selected_markers <- c('Foxp3','SOX10','LAG-3','CD86')
 pg_res <- Rphenograph(data = t(assay(sub[selected_markers,],"exprs")), k = 20)
 sub$PGu <- factor(pg_res[[2]]$membership)
 ```
@@ -388,9 +380,6 @@ x[x < 0] <- 0; x[x > 1] <- 1
 assay(sub, "scaled") <- x
 ```
 
-```{r}
-rownames(sub)
-```
 
 # Run tSNE
 ```{r}
